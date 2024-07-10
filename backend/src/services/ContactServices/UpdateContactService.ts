@@ -1,41 +1,54 @@
 import AppError from "../../errors/AppError";
+import socketEmit from "../../helpers/socketEmit";
 import Contact from "../../models/Contact";
 import ContactCustomField from "../../models/ContactCustomField";
+import ContactWallet from "../../models/ContactWallet";
 
 interface ExtraInfo {
   id?: number;
   name: string;
   value: string;
 }
+
+interface Wallet {
+  walletId: number | string;
+  contactId: number | string;
+  tenantId: number | string;
+}
+
 interface ContactData {
   email?: string;
   number?: string;
   name?: string;
   extraInfo?: ExtraInfo[];
+  wallets?: null | number[] | string[];
 }
 
 interface Request {
   contactData: ContactData;
   contactId: string;
-  companyId: number;
+  tenantId: string | number;
 }
 
 const UpdateContactService = async ({
   contactData,
   contactId,
-  companyId
+  tenantId
 }: Request): Promise<Contact> => {
-  const { email, name, number, extraInfo } = contactData;
+  const { email, name, number, extraInfo, wallets } = contactData;
 
   const contact = await Contact.findOne({
-    where: { id: contactId },
-    attributes: ["id", "name", "number", "email", "companyId", "profilePicUrl"],
-    include: ["extraInfo"]
+    where: { id: contactId, tenantId },
+    attributes: ["id", "name", "number", "email", "profilePicUrl"],
+    include: [
+      "extraInfo",
+      "tags",
+      {
+        association: "wallets",
+        attributes: ["id", "name"]
+      }
+    ]
   });
-
-  if (contact?.companyId !== companyId) {
-    throw new AppError("Não é possível alterar registros de outra empresa");
-  }
 
   if (!contact) {
     throw new AppError("ERR_NO_CONTACT_FOUND", 404);
@@ -43,7 +56,7 @@ const UpdateContactService = async ({
 
   if (extraInfo) {
     await Promise.all(
-      extraInfo.map(async (info: any) => {
+      extraInfo.map(async info => {
         await ContactCustomField.upsert({ ...info, contactId: contact.id });
       })
     );
@@ -59,6 +72,27 @@ const UpdateContactService = async ({
     );
   }
 
+  if (wallets) {
+    await ContactWallet.destroy({
+      where: {
+        tenantId,
+        contactId
+      }
+    });
+
+    const contactWallets: Wallet[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    wallets.forEach((wallet: any) => {
+      contactWallets.push({
+        walletId: !wallet.id ? wallet : wallet.id,
+        contactId,
+        tenantId
+      });
+    });
+
+    await ContactWallet.bulkCreate(contactWallets);
+  }
+
   await contact.update({
     name,
     number,
@@ -67,7 +101,20 @@ const UpdateContactService = async ({
 
   await contact.reload({
     attributes: ["id", "name", "number", "email", "profilePicUrl"],
-    include: ["extraInfo"]
+    include: [
+      "extraInfo",
+      "tags",
+      {
+        association: "wallets",
+        attributes: ["id", "name"]
+      }
+    ]
+  });
+
+  socketEmit({
+    tenantId,
+    type: "contact:update",
+    payload: contact
   });
 
   return contact;

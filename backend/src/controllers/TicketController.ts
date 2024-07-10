@@ -1,180 +1,154 @@
 import { Request, Response } from "express";
+import { Op } from "sequelize";
+// import GetWbotMessage from "../helpers/GetWbotMessage";
 import { getIO } from "../libs/socket";
-import Ticket from "../models/Ticket";
+import Message from "../models/Message";
+import CreateLogTicketService from "../services/TicketServices/CreateLogTicketService";
 
 import CreateTicketService from "../services/TicketServices/CreateTicketService";
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
 import ListTicketsService from "../services/TicketServices/ListTicketsService";
-import ShowTicketUUIDService from "../services/TicketServices/ShowTicketFromUUIDService";
+import ShowLogTicketService from "../services/TicketServices/ShowLogTicketService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
-import ListTicketsServiceKanban from "../services/TicketServices/ListTicketsServiceKanban";
+import Whatsapp from "../models/Whatsapp";
+import AppError from "../errors/AppError";
+import CreateMessageSystemService from "../services/MessageServices/CreateMessageSystemService";
+import { pupa } from "../utils/pupa";
+import Queue from "../libs/Queue";
+import queueValidation from "../utils/queueValidation";
+import Ticket from "../models/Ticket";
+import StatisticsPerUser from './../services/Statistics/StatisticsPerUsers';
 
 type IndexQuery = {
   searchParam: string;
   pageNumber: string;
-  status: string;
+  status: string[];
   date: string;
-  updatedAt?: string;
   showAll: string;
   withUnreadMessages: string;
-  queueIds: string;
-  tags: string;
-  users: string;
+  queuesIds: string[];
+  isNotAssignedUser: string;
+  includeNotQueueDefined: string;
 };
 
 interface TicketData {
   contactId: number;
   status: string;
-  queueId: number;
   userId: number;
-  whatsappId: string;
-  useIntegration: boolean;
-  promptId: number;
-  integrationId: number;
+  isActiveDemand: boolean;
+  tenantId: string | number;
+  channel: string;
+  channelId?: number;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
+  const { tenantId, profile } = req.user;
   const {
+    searchParam,
     pageNumber,
     status,
     date,
-    updatedAt,
-    searchParam,
     showAll,
-    queueIds: queueIdsStringified,
-    tags: tagIdsStringified,
-    users: userIdsStringified,
-    withUnreadMessages
+    withUnreadMessages,
+    queuesIds,
+    isNotAssignedUser,
+    includeNotQueueDefined
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
-  const { companyId } = req.user;
-
-  let queueIds: number[] = [];
-  let tagsIds: number[] = [];
-  let usersIds: number[] = [];
-
-  if (queueIdsStringified) {
-    queueIds = JSON.parse(queueIdsStringified);
-  }
-
-  if (tagIdsStringified) {
-    tagsIds = JSON.parse(tagIdsStringified);
-  }
-
-  if (userIdsStringified) {
-    usersIds = JSON.parse(userIdsStringified);
-  }
 
   const { tickets, count, hasMore } = await ListTicketsService({
     searchParam,
-    tags: tagsIds,
-    users: usersIds,
     pageNumber,
     status,
     date,
-    updatedAt,
     showAll,
     userId,
-    queueIds,
     withUnreadMessages,
-    companyId,
-
-
+    queuesIds,
+    isNotAssignedUser,
+    includeNotQueueDefined,
+    tenantId,
+    profile
   });
+
   return res.status(200).json({ tickets, count, hasMore });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { contactId, status, userId, queueId, whatsappId }: TicketData = req.body;
-  const { companyId } = req.user;
+  const { tenantId } = req.user;
+  const { contactId, status, userId, channel, channelId }: TicketData =
+    req.body;
+
+  const findedTicket = await Ticket.findOne({ where: { contactId, status, tenantId, channel } });
+
+  if (findedTicket) {
+    return res.status(200).json(findedTicket);
+  }
 
   const ticket = await CreateTicketService({
     contactId,
     status,
     userId,
-    companyId,
-    queueId,
-    whatsappId
+    tenantId,
+    channel,
+    channelId
   });
 
-  const io = getIO();
-  io.to(ticket.status).emit(`company-${companyId}-ticket`, {
-    action: "update",
-    ticket
-  });
+  // se ticket criado pelo próprio usuário, não emitir socket.
+  if (!userId) {
+    const io = getIO();
+    io.to(`${tenantId}:${ticket.status}`).emit(`${tenantId}:ticket`, {
+      action: "create",
+      ticket
+    });
+  }
+
   return res.status(200).json(ticket);
-};
-
-export const kanban = async (req: Request, res: Response): Promise<Response> => {
-  const {
-    pageNumber,
-    status,
-    date,
-    updatedAt,
-    searchParam,
-    showAll,
-    queueIds: queueIdsStringified,
-    tags: tagIdsStringified,
-    users: userIdsStringified,
-    withUnreadMessages
-  } = req.query as IndexQuery;
-
-
-  const userId = req.user.id;
-  const { companyId } = req.user;
-
-  let queueIds: number[] = [];
-  let tagsIds: number[] = [];
-  let usersIds: number[] = [];
-
-  if (queueIdsStringified) {
-    queueIds = JSON.parse(queueIdsStringified);
-  }
-
-  if (tagIdsStringified) {
-    tagsIds = JSON.parse(tagIdsStringified);
-  }
-
-  if (userIdsStringified) {
-    usersIds = JSON.parse(userIdsStringified);
-  }
-
-  const { tickets, count, hasMore } = await ListTicketsServiceKanban({
-    searchParam,
-    tags: tagsIds,
-    users: usersIds,
-    pageNumber,
-    status,
-    date,
-    updatedAt,
-    showAll,
-    userId,
-    queueIds,
-    withUnreadMessages,
-    companyId
-
-  });
-
-  return res.status(200).json({ tickets, count, hasMore });
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
-  const { companyId } = req.user;
+  const { tenantId } = req.user;
+  const userId = req.user.id;
 
-  const contact = await ShowTicketService(ticketId, companyId);
-  return res.status(200).json(contact);
-};
+  const ticket = await ShowTicketService({ id: ticketId, tenantId });
+  // const messages = await Message.findAll({
+  //   where: {
+  //     fromMe: true,
+  //     ticketId: ticket.id,
+  //     ack: 0,
+  //     messageId: { [Op.not]: null }
+  //   },
+  //   logging: console.log
+  // });
+  // if (messages) {
+  //   await Promise.all(
+  //     messages.map(async message => {
+  //       console.info(message);
+  //       const msg = await GetWbotMessage(ticket, message.messageId);
+  //       console.log(msg);
+  //     })
+  //   );
+  // }
+  const where = {
+    contactId: ticket.contactId,
+    scheduleDate: { [Op.not]: null },
+    status: "pending"
+  };
+  const scheduledMessages = await Message.findAll({
+    where
+    // logging: console.log
+  });
 
-export const showFromUUID = async (
-  req: Request,
-  res: Response
-): Promise<Response> => {
-  const { uuid } = req.params;
+  ticket.setDataValue("scheduledMessages", scheduledMessages);
 
-  const ticket: Ticket = await ShowTicketUUIDService(uuid);
+  await CreateLogTicketService({
+    userId,
+    ticketId,
+    type: "access"
+  });
 
   return res.status(200).json(ticket);
 };
@@ -184,15 +158,44 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const { ticketId } = req.params;
-  const ticketData: TicketData = req.body;
-  const { companyId } = req.user;
+  const { tenantId } = req.user;
+  const userIdRequest = req.user.id;
+  const { isTransference } = req.body;
+
+  const ticketData: TicketData = { ...req.body, tenantId };
 
   const { ticket } = await UpdateTicketService({
     ticketData,
     ticketId,
-    companyId
+    isTransference,
+    userIdRequest
   });
 
+  if (ticket.status === "closed") {
+    const whatsapp = await Whatsapp.findOne({
+      where: { id: ticket.whatsappId, tenantId }
+    });
+    if (whatsapp?.farewellMessage) {
+      const body = pupa(whatsapp.farewellMessage || "", {
+        protocol: ticket.protocol,
+        name: ticket.contact.name
+      });
+      const messageData = {
+        msg: { body, fromMe: true, read: true },
+        tenantId,
+        ticket,
+        userId: req.user.id,
+        sendType: "bot",
+        status: "pending",
+        isTransfer: false,
+        note: false
+      };
+      await CreateMessageSystemService(messageData);
+      // Queue.add("SendMessages", { sessionId: ticket.whatsappId, tenantId });
+      queueValidation(ticket.whatsappId, tenantId);
+      await ticket.update({ isFarewellMessage: true });
+    }
+  }
 
   return res.status(200).json(ticket);
 };
@@ -202,20 +205,30 @@ export const remove = async (
   res: Response
 ): Promise<Response> => {
   const { ticketId } = req.params;
-  const { companyId } = req.user;
+  const { tenantId } = req.user;
+  const userId = req.user.id;
 
-  await ShowTicketService(ticketId, companyId);
-
-  const ticket = await DeleteTicketService(ticketId);
+  const ticket = await DeleteTicketService({ id: ticketId, tenantId, userId });
 
   const io = getIO();
-  io.to(ticket.status)
-    .to(ticketId)
-    .to("notification")
-    .emit(`company-${companyId}-ticket`, {
+  io.to(`${tenantId}:${ticket.status}`)
+    .to(`${tenantId}:${ticketId}`)
+    .to(`${tenantId}:notification`)
+    .emit(`${tenantId}:ticket`, {
       action: "delete",
       ticketId: +ticketId
     });
 
   return res.status(200).json({ message: "ticket deleted" });
+};
+
+export const showLogsTicket = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { ticketId } = req.params;
+
+  const logsTicket = await ShowLogTicketService({ ticketId });
+
+  return res.status(200).json(logsTicket);
 };

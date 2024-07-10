@@ -1,42 +1,50 @@
 import Whatsapp from "../../models/Whatsapp";
 import AppError from "../../errors/AppError";
-import Queue from "../../models/Queue";
-import QueueOption from "../../models/QueueOption";
-import { FindOptions } from "sequelize/types";
-import Prompt from "../../models/Prompt";
 
-const ShowWhatsAppService = async (
-  id: string | number,
-  companyId: number,
-  session?: any
-): Promise<Whatsapp> => {
-  const findOptions: FindOptions = {
-    include: [
-      {
-        model: Queue,
-        as: "queues",
-        attributes: ["id", "name", "color", "greetingMessage", "integrationId", "promptId"],
-        include: [{ model: QueueOption, as: "options" }]
-      },
-      {
-        model: Prompt,
-        as: "prompt",
-      }
-    ],
-    order: [["queues", "orderQueue", "ASC"]]
-  };
+interface Data {
+  id: string | number;
+  tenantId?: string | number;
+  isInternal?: boolean;
+}
 
-  if (session !== undefined && session == 0) {
-    findOptions.attributes = { exclude: ["session"] };
+const ShowWhatsAppService = async ({
+  id,
+  tenantId,
+  isInternal = false
+}: Data): Promise<Whatsapp> => {
+  const attr = [
+    "id",
+    "qrcode",
+    "name",
+    "status",
+    "plugged",
+    "isDefault",
+    "isDeleted",
+    "tokenTelegram",
+    "instagramUser",
+    "type",
+    "createdAt",
+    "updatedAt",
+    "number",
+    "phone",
+    "tenantId",
+    "wabaBSP",
+    "tokenAPI",
+    "fbPageId",
+    "farewellMessage",
+    "chatFlowId",
+    "is_open_ia",
+    "queue_transf"
+  ];
+  if (isInternal) {
+    attr.push("instagramKey");
   }
 
-  const whatsapp = await Whatsapp.findByPk(id, findOptions);
+  const whatsapp = await Whatsapp.findByPk(id, {
+    attributes: attr
+  });
 
-  if (whatsapp?.companyId !== companyId) {
-    throw new AppError("Não é possível acessar registros de outra empresa");
-  }
-
-  if (!whatsapp) {
+  if (!whatsapp || (tenantId && whatsapp.tenantId !== tenantId)) {
     throw new AppError("ERR_NO_WAPP_FOUND", 404);
   }
 

@@ -6,88 +6,89 @@ import Ticket from "../models/Ticket";
 import Whatsapp from "../models/Whatsapp";
 import ContactCustomField from "../models/ContactCustomField";
 import Message from "../models/Message";
+import MessageOffLine from "../models/MessageOffLine";
+import AutoReply from "../models/AutoReply";
+import StepsReply from "../models/StepsReply";
+import StepsReplyAction from "../models/StepsReplyAction";
 import Queue from "../models/Queue";
-import WhatsappQueue from "../models/WhatsappQueue";
-import UserQueue from "../models/UserQueue";
-import Company from "../models/Company";
-import Plan from "../models/Plan";
-import TicketNote from "../models/TicketNote";
-import QuickMessage from "../models/QuickMessage";
-import Help from "../models/Help";
-import TicketTraking from "../models/TicketTraking";
-import UserRating from "../models/UserRating";
-import QueueOption from "../models/QueueOption";
-import Schedule from "../models/Schedule";
+import UsersQueues from "../models/UsersQueues";
+import Tenant from "../models/Tenant";
+import AutoReplyLogs from "../models/AutoReplyLogs";
+import UserMessagesLog from "../models/UserMessagesLog";
+import FastReply from "../models/FastReply";
 import Tag from "../models/Tag";
-import TicketTag from "../models/TicketTag";
-import ContactList from "../models/ContactList";
-import ContactListItem from "../models/ContactListItem";
+import ContactWallet from "../models/ContactWallet";
+import ContactTag from "../models/ContactTag";
 import Campaign from "../models/Campaign";
-import CampaignSetting from "../models/CampaignSetting";
-import Baileys from "../models/Baileys";
-import CampaignShipping from "../models/CampaignShipping";
-import Announcement from "../models/Announcement";
-import Chat from "../models/Chat";
-import ChatUser from "../models/ChatUser";
-import ChatMessage from "../models/ChatMessage";
-import Invoices from "../models/Invoices";
-import Subscriptions from "../models/Subscriptions";
-import BaileysChats from "../models/BaileysChats";
-import Files from "../models/Files";
-import FilesOptions from "../models/FilesOptions";
-import Prompt from "../models/Prompt";
-import QueueIntegrations from "../models/QueueIntegrations";
-import Email from "../models/Email"; //Email
+import CampaignContacts from "../models/CampaignContacts";
+import ApiConfig from "../models/ApiConfig";
+import ApiMessage from "../models/ApiMessage";
+import LogTicket from "../models/LogTicket";
+import ChatFlow from "../models/ChatFlow";
+import * as QueueJobs from "../libs/Queue";
+import { logger } from "../utils/logger";
+
+interface CustomSequelize extends Sequelize {
+  afterConnect?: any;
+  afterDisconnect?: any;
+}
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
 // import dbConfig from "../config/database";
 
-const sequelize = new Sequelize(dbConfig);
+const sequelize: CustomSequelize = new Sequelize(dbConfig);
 
 const models = [
-  Company,
   User,
   Contact,
   Ticket,
   Message,
+  MessageOffLine,
   Whatsapp,
   ContactCustomField,
   Setting,
+  AutoReply,
+  StepsReply,
+  StepsReplyAction,
   Queue,
-  WhatsappQueue,
-  UserQueue,
-  Plan,
-  TicketNote,
-  QuickMessage,
-  Help,
-  TicketTraking,
-  UserRating,
-  QueueOption,
-  Schedule,
+  UsersQueues,
+  Tenant,
+  AutoReplyLogs,
+  UserMessagesLog,
+  FastReply,
   Tag,
-  TicketTag,
-  ContactList,
-  ContactListItem,
+  ContactWallet,
+  ContactTag,
   Campaign,
-  CampaignSetting,
-  Baileys,
-  CampaignShipping,
-  Announcement,
-  Chat,
-  ChatUser,
-  ChatMessage,
-  Invoices,
-  Subscriptions,
-  BaileysChats,
-  Files,
-  FilesOptions,
-  Prompt,
-  Email,
-  QueueIntegrations,
-  
+  CampaignContacts,
+  ApiConfig,
+  ApiMessage,
+  LogTicket,
+  ChatFlow
 ];
 
 sequelize.addModels(models);
+
+// const startLoopDb = () => {
+//   // eslint-disable-next-line no-underscore-dangle
+//   global._loopDb = setInterval(() => {
+//     FindUpdateTicketsInactiveChatBot();
+//     console.log("DATABASE CONNECT");
+//   }, 60000);
+// };
+
+sequelize.afterConnect(() => {
+  logger.info("DATABASE CONNECT");
+  QueueJobs.default.add("VerifyTicketsChatBotInactives", {});
+  QueueJobs.default.add("SendMessageSchenduled", {});
+});
+
+sequelize.afterDisconnect(() => {
+  logger.info("DATABASE DISCONNECT");
+
+  // eslint-disable-next-line no-underscore-dangle
+  // clearInterval(global._loopDb);
+});
 
 export default sequelize;

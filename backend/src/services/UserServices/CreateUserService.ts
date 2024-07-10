@@ -1,19 +1,16 @@
 import * as Yup from "yup";
 
 import AppError from "../../errors/AppError";
-import { SerializeUser } from "../../helpers/SerializeUser";
 import User from "../../models/User";
-import Plan from "../../models/Plan";
-import Company from "../../models/Company";
+import CreateDefaultSettings from "../SettingServices/CreateDefaultSettings";
 
 interface Request {
   email: string;
   password: string;
   name: string;
-  queueIds?: number[];
-  companyId?: number;
+  tenantId: string | number;
   profile?: string;
-  whatsappId?: number;
+  configs?: {};
 }
 
 interface Response {
@@ -27,36 +24,13 @@ const CreateUserService = async ({
   email,
   password,
   name,
-  queueIds = [],
-  companyId,
+  tenantId,
   profile = "admin",
-  whatsappId
+  configs
 }: Request): Promise<Response> => {
-  if (companyId !== undefined) {
-    const company = await Company.findOne({
-      where: {
-        id: companyId
-      },
-      include: [{ model: Plan, as: "plan" }]
-    });
-
-    if (company !== null) {
-      const usersCount = await User.count({
-        where: {
-          companyId
-        }
-      });
-
-      if (usersCount >= company.plan.users) {
-        throw new AppError(
-          `Número máximo de usuários já alcançado: ${usersCount}`
-        );
-      }
-    }
-  }
-
   const schema = Yup.object().shape({
     name: Yup.string().required().min(2),
+    tenantId: Yup.number().required(),
     email: Yup.string()
       .email()
       .required()
@@ -64,9 +38,8 @@ const CreateUserService = async ({
         "Check-email",
         "An user with this email already exists.",
         async value => {
-          if (!value) return false;
           const emailExists = await User.findOne({
-            where: { email: value }
+            where: { email: value! }
           });
           return !emailExists;
         }
@@ -75,28 +48,27 @@ const CreateUserService = async ({
   });
 
   try {
-    await schema.validate({ email, password, name });
+    await schema.validate({ email, password, name, tenantId });
   } catch (err) {
     throw new AppError(err.message);
   }
 
-  const user = await User.create(
-    {
-      email,
-      password,
-      name,
-      companyId,
-      profile,
-      whatsappId: whatsappId || null,
-    },
-    { include: ["queues", "company"] }
-  );
-
-  await user.$set("queues", queueIds);
-
-  await user.reload();
-
-  const serializedUser = SerializeUser(user);
+  const user = await User.create({
+    email,
+    password,
+    name,
+    profile,
+    tenantId,
+    configs
+  });
+  const settings = CreateDefaultSettings(tenantId);
+  const serializedUser = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    profile: user.profile,
+    settings
+  };
 
   return serializedUser;
 };

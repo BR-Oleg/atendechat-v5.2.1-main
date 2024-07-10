@@ -1,37 +1,50 @@
 import { Request, Response } from "express";
+import axios from "axios";
 import AppError from "../errors/AppError";
-import { getIO } from "../libs/socket";
 
-import AuthUserService from "../services/UserServices/AuthUserService";
+import AuthUserService from "../services/UserServices/AuthUserSerice";
 import { SendRefreshToken } from "../helpers/SendRefreshToken";
 import { RefreshTokenService } from "../services/AuthServices/RefreshTokenService";
-import FindUserFromToken from "../services/AuthServices/FindUserFromToken";
+import { getIO } from "../libs/socket";
 import User from "../models/User";
 
+
 export const store = async (req: Request, res: Response): Promise<Response> => {
+  const io = getIO();
+
   const { email, password } = req.body;
 
-  const { token, serializedUser, refreshToken } = await AuthUserService({
+  const { token, user, refreshToken, usuariosOnline } = await AuthUserService({
     email,
     password
   });
 
   SendRefreshToken(res, refreshToken);
 
-  const io = getIO();
-  io.emit(`company-${serializedUser.companyId}-auth`, {
+  const params = {
+    token,
+    username: user.name,
+    email: user.email,
+    profile: user.profile,
+    status: user.status,
+    userId: user.id,
+    tenantId: user.tenantId,
+    queues: user.queues,
+    usuariosOnline,
+    configs: user.configs
+  };
+
+  io.emit(`${params.tenantId}:users`, {
     action: "update",
-    user: {
-      id: serializedUser.id,
-      email: serializedUser.email,
-      companyId: serializedUser.companyId
+    data: {
+      username: params.username,
+      email: params.email,
+      isOnline: true,
+      lastLogin: new Date()
     }
   });
 
-  return res.status(200).json({
-    token,
-    user: serializedUser
-  });
+  return res.status(200).json(params);
 };
 
 export const update = async (
@@ -44,37 +57,40 @@ export const update = async (
     throw new AppError("ERR_SESSION_EXPIRED", 401);
   }
 
-  const { user, newToken, refreshToken } = await RefreshTokenService(
-    res,
-    token
-  );
+  const { newToken, refreshToken } = await RefreshTokenService(token);
 
   SendRefreshToken(res, refreshToken);
 
-  return res.json({ token: newToken, user });
+  return res.json({ token: newToken });
 };
 
-export const me = async (req: Request, res: Response): Promise<Response> => {
-  const token: string = req.cookies.jrt;
-  const user = await FindUserFromToken(token);
-  const { id, profile, super: superAdmin } = user;
-
-  if (!token) {
-    throw new AppError("ERR_SESSION_EXPIRED", 401);
-  }
-
-  return res.json({ id, profile, super: superAdmin });
-};
-
-export const remove = async (
+export const logout = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { id } = req.user;
-  const user = await User.findByPk(id);
-  await user.update({ online: false });
+  const { userId } = req.body;
+  if (!userId) {
+    throw new AppError("ERR_USER_NOT_FOUND", 404);
+  }
+  const io = getIO();
 
-  res.clearCookie("jrt");
+  const userLogout = await User.findByPk(userId);
 
-  return res.send();
+  if (userLogout) {
+    userLogout.update({ isOnline: false, lastLogout: new Date() });
+  }
+
+  io.emit(`${userLogout?.tenantId}:users`, {
+    action: "update",
+    data: {
+      username: userLogout?.name,
+      email: userLogout?.email,
+      isOnline: false,
+      lastLogout: new Date()
+    }
+  });
+
+  // SendRefreshToken(res, refreshToken);
+
+  return res.json({ message: "USER_LOGOUT" });
 };

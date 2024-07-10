@@ -8,31 +8,44 @@ import {
   PrimaryKey,
   Default,
   BelongsTo,
-  ForeignKey
+  ForeignKey,
+  AllowNull
 } from "sequelize-typescript";
+import { v4 as uuidV4 } from "uuid";
 import Contact from "./Contact";
+import Tenant from "./Tenant";
 import Ticket from "./Ticket";
-import Company from "./Company";
-import Queue from "./Queue";
+import User from "./User";
 
 @Table
 class Message extends Model<Message> {
   @PrimaryKey
+  @Default(uuidV4)
   @Column
   id: string;
 
-  @Column(DataType.STRING)
-  remoteJid: string;
+  @Default(null)
+  @AllowNull
+  @Column
+  messageId: string;
 
-  @Column(DataType.STRING)
-  participant: string;
-
+  @AllowNull
   @Column(DataType.STRING)
   dataJson: string;
 
   @Default(0)
   @Column
   ack: number;
+
+  @Default(null)
+  @AllowNull
+  @Column(DataType.ENUM("pending", "sended", "received"))
+  status: string;
+
+  @Default(null)
+  @AllowNull
+  @Column(DataType.TEXT)
+  wabaMediaId: string;
 
   @Default(false)
   @Column
@@ -45,10 +58,17 @@ class Message extends Model<Message> {
   @Column(DataType.TEXT)
   body: string;
 
+  @Column(DataType.VIRTUAL)
+  get mediaName(): string | null {
+    return this.getDataValue("mediaUrl");
+  }
+
   @Column(DataType.STRING)
   get mediaUrl(): string | null {
     if (this.getDataValue("mediaUrl")) {
-      return `${process.env.BACKEND_URL}${process.env.PROXY_PORT ?`:${process.env.PROXY_PORT}`:""}/public/${this.getDataValue("mediaUrl")}`;
+      const { BACKEND_URL } = process.env;
+      const value = this.getDataValue("mediaUrl");
+      return `${BACKEND_URL}:${process.env.PROXY_PORT}/public/${value}`;
     }
     return null;
   }
@@ -68,6 +88,7 @@ class Message extends Model<Message> {
   @Column(DataType.DATE(6))
   updatedAt: Date;
 
+  // @HasOne(() => Message, "messageId")
   @ForeignKey(() => Message)
   @Column
   quotedMsgId: string;
@@ -89,23 +110,53 @@ class Message extends Model<Message> {
   @BelongsTo(() => Contact, "contactId")
   contact: Contact;
 
-  @ForeignKey(() => Company)
-  @Column
-  companyId: number;
+  @Default(null)
+  @AllowNull
+  @Column(DataType.BIGINT)
+  timestamp: number;
 
-  @BelongsTo(() => Company)
-  company: Company;
-
-  @ForeignKey(() => Queue)
+  @ForeignKey(() => User)
+  @Default(null)
+  @AllowNull
   @Column
-  queueId: number;
+  userId: number;
 
-  @BelongsTo(() => Queue)
-  queue: Queue;
-  
-  @Default(false)
+  @BelongsTo(() => User)
+  user: User;
+
+  @Default(null)
+  @AllowNull
+  @Column(DataType.DATE)
+  scheduleDate: Date;
+
+  @Default(null)
+  @AllowNull
+  @Column(
+    DataType.ENUM("campaign", "chat", "external", "schedule", "bot", "sync")
+  )
+  sendType: string;
+
+  @ForeignKey(() => Tenant)
   @Column
-  isEdited: boolean;
+  tenantId: number;
+
+  @BelongsTo(() => Tenant)
+  tenant: Tenant;
+
+  @Default(null)
+  @AllowNull
+  @Column
+  idFront: string;
 }
+
+// Message.sequelize?.define("Message", {
+//   quotedMsgId: {
+//     type: DataType.STRING,
+//     references: {
+//       model: Message,
+//       key: "messageId"
+//     }
+//   }
+// });
 
 export default Message;

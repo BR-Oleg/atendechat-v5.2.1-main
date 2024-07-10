@@ -1,38 +1,25 @@
 import path from "path";
 import multer from "multer";
-import fs from "fs";
+import { format } from "date-fns";
 
 const publicFolder = path.resolve(__dirname, "..", "..", "public");
-
 export default {
   directory: publicFolder,
+
   storage: multer.diskStorage({
-    destination: async function (req, file, cb) {
-
-      const { typeArch, fileId } = req.body;      
-
-      let folder;
-
-      if (typeArch && typeArch !== "announcements") {
-        folder =  path.resolve(publicFolder , typeArch, fileId ? fileId : "") 
-      } else if (typeArch && typeArch === "announcements") {
-        folder =  path.resolve(publicFolder , typeArch) 
-      }
-      else
-      {
-        folder =  path.resolve(publicFolder) 
-      }
-
-      if (!fs.existsSync(folder)) {
-        fs.mkdirSync(folder,  { recursive: true })
-        fs.chmodSync(folder, 0o777)
-      }
-      return cb(null, folder);
-    },
+    destination: publicFolder,
     filename(req, file, cb) {
-      const { typeArch } = req.body;
+      let fileName;
+      if (file.mimetype?.toLocaleLowerCase().endsWith("xml")) {
+        fileName = file.originalname;
+      } else {
+        const { originalname } = file;
+        const ext = path.extname(originalname);
+        const name = originalname.replace(ext, "");
+        const date = format(new Date(), "ddMMyyyyHHmmssSSS");
+        fileName = `${name}_${date}${ext}`;
+      }
 
-      const fileName = typeArch && typeArch !== "announcements" ? file.originalname.replace('/','-').replace(/ /g, "_") : new Date().getTime() + '_' + file.originalname.replace('/','-').replace(/ /g, "_");
       return cb(null, fileName);
     }
   })

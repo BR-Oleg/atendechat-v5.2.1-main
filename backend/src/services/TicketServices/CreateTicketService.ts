@@ -1,79 +1,65 @@
 import AppError from "../../errors/AppError";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
+import socketEmit from "../../helpers/socketEmit";
 import Ticket from "../../models/Ticket";
 import ShowContactService from "../ContactServices/ShowContactService";
-import { getIO } from "../../libs/socket";
-import GetDefaultWhatsAppByUser from "../../helpers/GetDefaultWhatsAppByUser";
-import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
+import CreateLogTicketService from "./CreateLogTicketService";
+import ShowTicketService from "./ShowTicketService";
 
 interface Request {
   contactId: number;
   status: string;
   userId: number;
-  companyId: number;
-  queueId?: number;
-  whatsappId?: string;
+  tenantId: string | number;
+  channel: string;
+  channelId?: number;
 }
 
 const CreateTicketService = async ({
   contactId,
   status,
   userId,
-  queueId,
-  companyId,
-  whatsappId
+  tenantId,
+  channel,
+  channelId = undefined
 }: Request): Promise<Ticket> => {
-  let whatsapp;
+  const defaultWhatsapp = await GetDefaultWhatsApp(tenantId, channelId);
 
-  if (whatsappId !== undefined && whatsappId !== null && whatsappId !==  "") {
-    whatsapp = await ShowWhatsAppService(whatsappId, companyId)
+  if (!channel || !["instagram", "telegram", "whatsapp"].includes(channel)) {
+    throw new AppError("ERR_CREATING_TICKET");
   }
-  
-  let defaultWhatsapp = await GetDefaultWhatsAppByUser(userId);
 
-  if (whatsapp) {
-    defaultWhatsapp = whatsapp;
-  }
-  if (!defaultWhatsapp)
-    defaultWhatsapp = await GetDefaultWhatsApp(companyId);
+  await CheckContactOpenTickets(contactId);
 
-  await CheckContactOpenTickets(contactId, whatsappId);
+  const { isGroup } = await ShowContactService({ id: contactId, tenantId });
 
-  const { isGroup } = await ShowContactService(contactId, companyId);
-
-  const [{ id }] = await Ticket.findOrCreate({
-    where: {
-      contactId,
-      companyId,
-      whatsappId
-    },
-    defaults: {
-      contactId,
-      companyId,
-      whatsappId: defaultWhatsapp.id,
-      status,
-      isGroup,
-      userId
-    }
+  const { id }: Ticket = await defaultWhatsapp.$create("ticket", {
+    contactId,
+    status,
+    isGroup,
+    userId,
+    isActiveDemand: true,
+    channel,
+    tenantId
   });
 
-  await Ticket.update(
-    { companyId, queueId, userId, whatsappId: defaultWhatsapp.id, status: "open" },
-    { where: { id } }
-  );
-
-  const ticket = await Ticket.findByPk(id, { include: ["contact", "queue"] });
+  const ticket = await ShowTicketService({ id, tenantId });
 
   if (!ticket) {
     throw new AppError("ERR_CREATING_TICKET");
   }
 
-  const io = getIO();
+  await CreateLogTicketService({
+    userId,
+    ticketId: ticket.id,
+    type: "create"
+  });
 
-  io.to(ticket.id.toString()).emit("ticket", {
-    action: "update",
-    ticket
+  socketEmit({
+    tenantId,
+    type: "ticket:update",
+    payload: ticket
   });
 
   return ticket;

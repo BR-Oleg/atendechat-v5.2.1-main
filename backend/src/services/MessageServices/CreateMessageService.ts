@@ -1,10 +1,10 @@
-import { getIO } from "../../libs/socket";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
-import Whatsapp from "../../models/Whatsapp";
+import socketEmit from "../../helpers/socketEmit";
 
 interface MessageData {
-  id: string;
+  id?: string;
+  messageId: string;
   ticketId: number;
   body: string;
   contactId?: number;
@@ -12,35 +12,33 @@ interface MessageData {
   read?: boolean;
   mediaType?: string;
   mediaUrl?: string;
-  ack?: number;
-  queueId?: number;
+  timestamp?: number;
 }
 interface Request {
   messageData: MessageData;
-  companyId: number;
+  tenantId: string | number;
 }
 
 const CreateMessageService = async ({
   messageData,
-  companyId
+  tenantId
 }: Request): Promise<Message> => {
-  await Message.upsert({ ...messageData, companyId });
-
-  const message = await Message.findByPk(messageData.id, {
+  const msg = await Message.findOne({
+    where: { messageId: messageData.messageId, tenantId }
+  });
+  if (!msg) {
+    await Message.create({ ...messageData, tenantId });
+  } else {
+    await msg.update(messageData);
+  }
+  const message = await Message.findOne({
+    where: { messageId: messageData.messageId, tenantId },
     include: [
-      "contact",
       {
         model: Ticket,
         as: "ticket",
-        include: [
-          "contact",
-          "queue",
-          {
-            model: Whatsapp,
-            as: "whatsapp",
-            attributes: ["name"]
-          }
-        ]
+        where: { tenantId },
+        include: ["contact"]
       },
       {
         model: Message,
@@ -50,24 +48,16 @@ const CreateMessageService = async ({
     ]
   });
 
-  if (message.ticket.queueId !== null && message.queueId === null) {
-    await message.update({ queueId: message.ticket.queueId });
-  }
-
   if (!message) {
+    // throw new AppError("ERR_CREATING_MESSAGE", 501);
     throw new Error("ERR_CREATING_MESSAGE");
   }
 
-  const io = getIO();
-  io.to(message.ticketId.toString())
-    .to(message.ticket.status)
-    .to("notification")
-    .emit(`company-${companyId}-appMessage`, {
-      action: "create",
-      message,
-      ticket: message.ticket,
-      contact: message.ticket.contact
-    });
+  socketEmit({
+    tenantId,
+    type: "chat:create",
+    payload: message
+  });
 
   return message;
 };

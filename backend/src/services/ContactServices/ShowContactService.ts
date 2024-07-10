@@ -1,17 +1,27 @@
 import Contact from "../../models/Contact";
 import AppError from "../../errors/AppError";
 
-const ShowContactService = async (
-  id: string | number,
-  companyId: number
-): Promise<Contact> => {
-  const contact = await Contact.findByPk(id, { include: ["extraInfo", "whatsapp"] });
+interface Request {
+  id: string | number;
+  tenantId: string | number;
+}
 
-  if (contact?.companyId !== companyId) {
-    throw new AppError("Não é possível excluir registro de outra empresa");
-  }
+const ShowContactService = async ({
+  id,
+  tenantId
+}: Request): Promise<Contact> => {
+  const contact = await Contact.findByPk(id, {
+    include: [
+      "extraInfo",
+      "tags",
+      {
+        association: "wallets",
+        attributes: ["id", "name"]
+      }
+    ]
+  });
 
-  if (!contact) {
+  if (!contact || contact.tenantId !== tenantId) {
     throw new AppError("ERR_NO_CONTACT_FOUND", 404);
   }
 

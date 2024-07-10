@@ -1,41 +1,42 @@
 import express from "express";
-import isAuth from "../middleware/isAuth";
-
-import * as CampaignController from "../controllers/CampaignController";
 import multer from "multer";
+import isAuth from "../middleware/isAuth";
 import uploadConfig from "../config/upload";
 
+import * as CampaignController from "../controllers/CampaignController";
+
+const campaignsRoutes = express.Router();
 const upload = multer(uploadConfig);
 
-const routes = express.Router();
-
-routes.get("/campaigns/list", isAuth, CampaignController.findList);
-
-routes.get("/campaigns", isAuth, CampaignController.index);
-
-routes.get("/campaigns/:id", isAuth, CampaignController.show);
-
-routes.post("/campaigns", isAuth, CampaignController.store);
-
-routes.put("/campaigns/:id", isAuth, CampaignController.update);
-
-routes.delete("/campaigns/:id", isAuth, CampaignController.remove);
-
-routes.post("/campaigns/:id/cancel", isAuth, CampaignController.cancel);
-
-routes.post("/campaigns/:id/restart", isAuth, CampaignController.restart);
-
-routes.post(
-  "/campaigns/:id/media-upload",
+campaignsRoutes.post(
+  "/campaigns",
   isAuth,
-  upload.array("file"),
-  CampaignController.mediaUpload
+  upload.array("medias"),
+  CampaignController.store
+);
+campaignsRoutes.get("/campaigns", isAuth, CampaignController.index);
+campaignsRoutes.put(
+  "/campaigns/:campaignId",
+  isAuth,
+  upload.array("medias"),
+  CampaignController.update
+);
+campaignsRoutes.delete(
+  "/campaigns/:campaignId",
+  isAuth,
+  CampaignController.remove
 );
 
-routes.delete(
-  "/campaigns/:id/media-upload",
+campaignsRoutes.post(
+  "/campaigns/start/:campaignId",
   isAuth,
-  CampaignController.deleteMedia
+  CampaignController.startCampaign
 );
 
-export default routes;
+campaignsRoutes.post(
+  "/campaigns/cancel/:campaignId",
+  isAuth,
+  CampaignController.cancelCampaign
+);
+
+export default campaignsRoutes;

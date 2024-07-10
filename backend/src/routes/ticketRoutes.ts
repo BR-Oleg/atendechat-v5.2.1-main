@@ -9,14 +9,16 @@ ticketRoutes.get("/tickets", isAuth, TicketController.index);
 
 ticketRoutes.get("/tickets/:ticketId", isAuth, TicketController.show);
 
-ticketRoutes.get("/ticket/kanban", isAuth, TicketController.kanban);
-
-ticketRoutes.get("/tickets/u/:uuid", isAuth, TicketController.showFromUUID);
-
 ticketRoutes.post("/tickets", isAuth, TicketController.store);
 
 ticketRoutes.put("/tickets/:ticketId", isAuth, TicketController.update);
 
 ticketRoutes.delete("/tickets/:ticketId", isAuth, TicketController.remove);
+
+ticketRoutes.get(
+  "/tickets/:ticketId/logs",
+  isAuth,
+  TicketController.showLogsTicket
+);
 
 export default ticketRoutes;

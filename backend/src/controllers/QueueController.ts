@@ -1,107 +1,100 @@
+import * as Yup from "yup";
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
-import CreateQueueService from "../services/QueueService/CreateQueueService";
-import DeleteQueueService from "../services/QueueService/DeleteQueueService";
-import ListQueuesService from "../services/QueueService/ListQueuesService";
-import ShowQueueService from "../services/QueueService/ShowQueueService";
-import UpdateQueueService from "../services/QueueService/UpdateQueueService";
-import { isNil } from "lodash";
+import AppError from "../errors/AppError";
 
-type QueueFilter = {
-  companyId: number;
+import CreateQueueService from "../services/QueueServices/CreateQueueService";
+import ListQueueService from "../services/QueueServices/ListQueueService";
+import DeleteQueueService from "../services/QueueServices/DeleteQueueService";
+import UpdateQueueService from "../services/QueueServices/UpdateQueueService";
+import ListUserQueueService from "../services/QueueServices/ListUserQueueService";
+
+interface QueueData {
+  queue: string;
+  isActive: boolean;
+  userId: number;
+  from_ia: boolean;
+  tenantId: number | string;
+}
+
+export const store = async (req: Request, res: Response): Promise<Response> => {
+  const { tenantId } = req.user;
+  if (req.user.profile !== "admin") {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+
+  const newQueue: QueueData = { ...req.body, userId: req.user.id, tenantId };
+
+  const schema = Yup.object().shape({
+    queue: Yup.string().required(),
+    userId: Yup.number().required(),
+    tenantId: Yup.number().required()
+  });
+
+  try {
+    await schema.validate(newQueue);
+  } catch (error) {
+    throw new AppError(error.message);
+  }
+
+  const queue = await CreateQueueService(newQueue);
+
+  return res.status(200).json(queue);
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const { companyId: userCompanyId } = req.user;
-  const { companyId: queryCompanyId } = req.query as unknown as QueueFilter;
-  let companyId = userCompanyId;
-
-  if (!isNil(queryCompanyId)) {
-    companyId = +queryCompanyId;
-  }
-
-  const queues = await ListQueuesService({ companyId });
-
+  const { tenantId } = req.user;
+  const queues = await ListQueueService({ tenantId });
   return res.status(200).json(queues);
-};
-
-export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { name, color, greetingMessage, outOfHoursMessage, schedules, orderQueue, integrationId, promptId } =
-    req.body;
-  const { companyId } = req.user;
-  console.log("queue", integrationId, promptId)
-  const queue = await CreateQueueService({
-    name,
-    color,
-    greetingMessage,
-    companyId,
-    outOfHoursMessage,
-    schedules,
-    orderQueue: orderQueue === "" ? null : orderQueue,
-    integrationId: integrationId === "" ? null : integrationId,
-    promptId: promptId === "" ? null : promptId
-  });
-
-  const io = getIO();
-  io.emit(`company-${companyId}-queue`, {
-    action: "update",
-    queue
-  });
-
-  return res.status(200).json(queue);
-};
-
-export const show = async (req: Request, res: Response): Promise<Response> => {
-  const { queueId } = req.params;
-  const { companyId } = req.user;
-
-  const queue = await ShowQueueService(queueId, companyId);
-
-  return res.status(200).json(queue);
 };
 
 export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { queueId } = req.params;
-  const { companyId } = req.user;
-  const { name, color, greetingMessage, outOfHoursMessage, schedules, orderQueue, integrationId, promptId } =
-    req.body;
-  const queue = await UpdateQueueService(queueId, {
-    name,
-    color,
-    greetingMessage,
-    outOfHoursMessage,
-    schedules,
-    orderQueue: orderQueue === "" ? null : orderQueue,
-    integrationId: integrationId === "" ? null : integrationId,
-    promptId: promptId === "" ? null : promptId
-  }, companyId);
+  const { tenantId } = req.user;
 
-  const io = getIO();
-  io.emit(`company-${companyId}-queue`, {
-    action: "update",
-    queue
+  if (req.user.profile !== "admin") {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+  const queueData: QueueData = { ...req.body, userId: req.user.id, tenantId };
+
+  const schema = Yup.object().shape({
+    queue: Yup.string().required(),
+    isActive: Yup.boolean().required(),
+    userId: Yup.number().required()
   });
 
-  return res.status(201).json(queue);
+  try {
+    await schema.validate(queueData);
+  } catch (error) {
+    throw new AppError(error.message);
+  }
+
+  const { queueId } = req.params;
+  const queueObj = await UpdateQueueService({
+    queueData,
+    queueId
+  });
+
+  return res.status(200).json(queueObj);
 };
 
 export const remove = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
+  const { tenantId } = req.user;
+  if (req.user.profile !== "admin") {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   const { queueId } = req.params;
-  const { companyId } = req.user;
 
-  await DeleteQueueService(queueId, companyId);
+  await DeleteQueueService({ id: queueId, tenantId });
+  return res.status(200).json({ message: "Queue deleted" });
+};
 
-  const io = getIO();
-  io.emit(`company-${companyId}-queue`, {
-    action: "delete",
-    queueId: +queueId
-  });
-
-  return res.status(200).send();
+export const listUserQueues = async (req: Request, res: Response): Promise<Response> => {
+  const { tenantId, id } = req.user;
+  const queues = await ListUserQueueService({ tenantId, userId: id });
+  return res.status(200).json(queues);
 };

@@ -1,9 +1,8 @@
 import Redis from "ioredis";
-import { REDIS_URI_CONNECTION } from "../config/redis";
 import util from "util";
 import * as crypto from "crypto";
 
-const redis = new Redis(REDIS_URI_CONNECTION);
+const redis = new Redis(process.env.REDIS_URI || "");
 
 function encryptParams(params: any) {
   const str = JSON.stringify(params);
@@ -42,7 +41,7 @@ export function set(
 ) {
   const setPromisefy = util.promisify(redis.set).bind(redis);
   if (option !== undefined && optionValue !== undefined) {
-    return setPromisefy(key, value, option, optionValue);
+    return setPromisefy(key, value);
   }
 
   return setPromisefy(key, value);
@@ -60,12 +59,13 @@ export function getKeys(pattern: string) {
 
 export function del(key: string) {
   const delPromisefy = util.promisify(redis.del).bind(redis);
+  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
   return delPromisefy(key);
 }
 
 export async function delFromPattern(pattern: string) {
   const all = await getKeys(pattern);
-  for (let item of all) {
+  for (let item of all!) {
     del(item);
   }
 }

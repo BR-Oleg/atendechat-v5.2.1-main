@@ -7,17 +7,23 @@ import {
   PrimaryKey,
   AutoIncrement,
   AllowNull,
-  Unique,
   Default,
   HasMany,
+  BeforeCreate,
   ForeignKey,
-  BelongsTo
+  BelongsTo,
+  BelongsToMany
 } from "sequelize-typescript";
+import Campaign from "./Campaign";
+import CampaignContacts from "./CampaignContacts";
 import ContactCustomField from "./ContactCustomField";
+import ContactWallet from "./ContactWallet";
+// import Message from "./Message";
+import Tags from "./Tag";
+import Tenant from "./Tenant";
 import Ticket from "./Ticket";
-import Company from "./Company";
-import Schedule from "./Schedule";
-import Whatsapp from "./Whatsapp";
+import ContactTag from "./ContactTag";
+import User from "./User";
 
 @Table
 class Contact extends Model<Contact> {
@@ -29,19 +35,45 @@ class Contact extends Model<Contact> {
   @Column
   name: string;
 
-  @AllowNull(false)
-  @Unique
+  @AllowNull(true)
   @Column
   number: string;
 
-  @AllowNull(false)
-  @Default("")
+  @AllowNull(true)
+  @Default(null)
   @Column
   email: string;
 
-  @Default("")
   @Column
   profilePicUrl: string;
+
+  @AllowNull(true)
+  @Default(null)
+  @Column
+  pushname: string;
+
+  @AllowNull(true)
+  @Default(null)
+  @Column
+  telegramId: string;
+
+  @AllowNull(true)
+  @Default(null)
+  @Column
+  messengerId: string;
+
+  @AllowNull(true)
+  @Default(null)
+  @Column
+  instagramPK: number;
+
+  @Default(false)
+  @Column
+  isUser: boolean;
+
+  @Default(false)
+  @Column
+  isWAContact: boolean;
 
   @Default(false)
   @Column
@@ -59,26 +91,32 @@ class Contact extends Model<Contact> {
   @HasMany(() => ContactCustomField)
   extraInfo: ContactCustomField[];
 
-  @ForeignKey(() => Company)
+  @BelongsToMany(() => Tags, () => ContactTag, "contactId", "tagId")
+  tags: Tags[];
+
+  @BelongsToMany(() => User, () => ContactWallet, "contactId", "walletId")
+  wallets: ContactWallet[];
+
+  @HasMany(() => ContactWallet)
+  contactWallets: ContactWallet[];
+
+  @HasMany(() => CampaignContacts)
+  campaignContacts: CampaignContacts[];
+
+  @BelongsToMany(
+    () => Campaign,
+    () => CampaignContacts,
+    "contactId",
+    "campaignId"
+  )
+  campaign: Campaign[];
+
+  @ForeignKey(() => Tenant)
   @Column
-  companyId: number;
+  tenantId: number;
 
-  @BelongsTo(() => Company)
-  company: Company;
-
-  @HasMany(() => Schedule, {
-    onUpdate: "CASCADE",
-    onDelete: "CASCADE",
-    hooks: true
-  })
-  schedules: Schedule[];
-
-  @ForeignKey(() => Whatsapp)
-  @Column
-  whatsappId: number;
-
-  @BelongsTo(() => Whatsapp)
-  whatsapp: Whatsapp;
+  @BelongsTo(() => Tenant)
+  tenant: Tenant;
 }
 
 export default Contact;

@@ -1,13 +1,12 @@
 import { Sequelize, Op } from "sequelize";
 import Queue from "../../models/Queue";
-import Company from "../../models/Company";
+// import UsersQueues from "../../models/UsersQueues";
 import User from "../../models/User";
 
 interface Request {
   searchParam?: string;
   pageNumber?: string | number;
-  profile?: string;
-  companyId?: number;
+  tenantId: string | number;
 }
 
 interface Response {
@@ -19,37 +18,32 @@ interface Response {
 const ListUsersService = async ({
   searchParam = "",
   pageNumber = "1",
-  companyId
+  tenantId
 }: Request): Promise<Response> => {
   const whereCondition = {
+    tenantId,
     [Op.or]: [
       {
-        "$User.name$": Sequelize.where(
-          Sequelize.fn("LOWER", Sequelize.col("User.name")),
+        name: Sequelize.where(
+          Sequelize.fn("LOWER", Sequelize.col("name")),
           "LIKE",
           `%${searchParam.toLowerCase()}%`
         )
       },
       { email: { [Op.like]: `%${searchParam.toLowerCase()}%` } }
-    ],
-    companyId: {
-      [Op.eq]: companyId
-    }
+    ]
   };
-
-  const limit = 20;
+  const limit = 40;
   const offset = limit * (+pageNumber - 1);
 
   const { count, rows: users } = await User.findAndCountAll({
     where: whereCondition,
-    attributes: ["name", "id", "email", "companyId", "profile", "createdAt"],
+    include: [{ model: Queue, attributes: ["id", "queue"] }],
+    attributes: ["name", "id", "email", "profile"],
     limit,
     offset,
-    order: [["createdAt", "DESC"]],
-    include: [
-      { model: Queue, as: "queues", attributes: ["id", "name", "color"] },
-      { model: Company, as: "company", attributes: ["id", "name"] }
-    ]
+    distinct: true,
+    order: [["name", "ASC"]]
   });
 
   const hasMore = count > offset + users.length;

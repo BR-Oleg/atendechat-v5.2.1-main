@@ -2,22 +2,28 @@ import Ticket from "../../models/Ticket";
 import AppError from "../../errors/AppError";
 import Contact from "../../models/Contact";
 import User from "../../models/User";
-import Queue from "../../models/Queue";
-import Tag from "../../models/Tag";
-import Whatsapp from "../../models/Whatsapp";
-import Prompt from "../../models/Prompt";
 
-const ShowTicketService = async (
-  id: string | number,
-  companyId: number
-): Promise<Ticket> => {
+interface Request {
+  id: string | number;
+  tenantId: string | number;
+}
+const ShowTicketService = async ({
+  id,
+  tenantId
+}: Request): Promise<Ticket> => {
   const ticket = await Ticket.findByPk(id, {
     include: [
       {
         model: Contact,
         as: "contact",
-        attributes: ["id", "name", "number", "email", "profilePicUrl"],
-        include: ["extraInfo"]
+        include: [
+          "extraInfo",
+          "tags",
+          {
+            association: "wallets",
+            attributes: ["id", "name"]
+          }
+        ]
       },
       {
         model: User,
@@ -25,29 +31,13 @@ const ShowTicketService = async (
         attributes: ["id", "name"]
       },
       {
-        model: Queue,
-        as: "queue",
-        attributes: ["id", "name", "color"],
-        include: ["prompt", "queueIntegrations"]
-      },
-      {
-        model: Whatsapp,
-        as: "whatsapp",
-        attributes: ["name"]
-      },
-      {
-        model: Tag,
-        as: "tags",
-        attributes: ["id", "name", "color"]
+        association: "whatsapp",
+        attributes: ["id", "name" , "isDeleted"]
       }
     ]
   });
 
-  if (ticket?.companyId !== companyId) {
-    throw new AppError("Não é possível consultar registros de outra empresa");
-  }
-
-  if (!ticket) {
+  if (!ticket || ticket.tenantId !== tenantId) {
     throw new AppError("ERR_NO_TICKET_FOUND", 404);
   }
 

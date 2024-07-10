@@ -13,15 +13,15 @@ import {
   HasMany,
   BelongsToMany,
   ForeignKey,
-  BelongsTo
+  BelongsTo,
+  AllowNull
 } from "sequelize-typescript";
 import { hash, compare } from "bcryptjs";
 import Ticket from "./Ticket";
 import Queue from "./Queue";
-import UserQueue from "./UserQueue";
-import Company from "./Company";
-import QuickMessage from "./QuickMessage";
-import Whatsapp from "./Whatsapp";
+import UsersQueues from "./UsersQueues";
+import Tenant from "./Tenant";
+import Contact from "./Contact";
 
 @Table
 class User extends Model<User> {
@@ -35,6 +35,9 @@ class User extends Model<User> {
 
   @Column
   email: string;
+
+  @Column
+  status: string;
 
   @Column(DataType.VIRTUAL)
   password: string;
@@ -50,44 +53,45 @@ class User extends Model<User> {
   @Column
   profile: string;
 
-  @Column
-  super: boolean;
-
-  @Column
-  online: boolean;
-
   @CreatedAt
   createdAt: Date;
 
   @UpdatedAt
   updatedAt: Date;
 
-  @ForeignKey(() => Company)
-  @Column
-  companyId: number;
-
-  @BelongsTo(() => Company)
-  company: Company;
-
   @HasMany(() => Ticket)
   tickets: Ticket[];
 
-  @BelongsToMany(() => Queue, () => UserQueue)
+  @BelongsToMany(() => Queue, () => UsersQueues, "userId", "queueId")
   queues: Queue[];
 
-  @HasMany(() => QuickMessage, {
-    onUpdate: "CASCADE",
-    onDelete: "CASCADE",
-    hooks: true
-  })
-  quickMessages: QuickMessage[];
+  @BelongsToMany(() => Contact, () => Ticket, "userId", "contactId")
+  Contact: Contact[];
 
-  @ForeignKey(() => Whatsapp)
+  @ForeignKey(() => Tenant)
   @Column
-  whatsappId: number;
+  tenantId: number;
 
-  @BelongsTo(() => Whatsapp)
-  whatsapp: Whatsapp;
+  @BelongsTo(() => Tenant)
+  tenant: Tenant;
+
+  @Column
+  lastLogin: Date;
+
+  @Column
+  lastOnline: Date;
+
+  @Column
+  lastLogout: Date;
+
+  @Column
+  isOnline: boolean;
+
+  @Default({})
+  @AllowNull
+  @Column(DataType.JSON)
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  configs: object;
 
   @BeforeUpdate
   @BeforeCreate
